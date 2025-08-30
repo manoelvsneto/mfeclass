@@ -9,9 +9,24 @@ Este monorepo contém dois aplicativos React que demonstram o uso de Module Fede
 
 Este projeto utiliza **Module Federation** do Webpack (via plugin para Vite) para possibilitar o compartilhamento de componentes entre aplicações independentes em tempo de execução.
 
-- O app `catalog` expõe o componente `Products` que busca produtos de uma API externa
-- O app `shell` carrega dinamicamente este componente através de uma URL remota
-- No ambiente de produção, a URL do componente remoto é injetada via variável de ambiente (`VITE_CATALOG_URL`)
+![Arquitetura do Sistema](https://user-images.githubusercontent.com/placeholder/architecture-diagram.png)
+
+### Como Funciona
+
+- O app `catalog` expõe o componente `Products` através do arquivo `remoteEntry.js`
+- O app `shell` carrega dinamicamente este componente através da URL do remoteEntry.js
+- A comunicação entre os apps acontece no navegador, em tempo de execução
+- No ambiente de produção, cada app é hospedado em um Azure Static Web App separado
+- A URL do remoteEntry.js é injetada no shell via variável de ambiente (`VITE_CATALOG_URL`)
+
+### Tecnologias Principais
+
+- **React 18** - Framework UI
+- **TypeScript** - Tipagem estática
+- **Vite** - Build tool
+- **Tailwind CSS** - Framework CSS utilitário
+- **Module Federation** - Compartilhamento de código em tempo de execução
+- **Azure Static Web Apps** - Hospedagem na nuvem
 
 ## Desenvolvimento Local
 
@@ -52,11 +67,13 @@ Os arquivos de distribuição serão gerados nas pastas `catalog/dist` e `shell/
 
 ## Deploy no Azure Static Web Apps
 
+Existem duas opções para deploy: GitHub Actions ou Azure DevOps.
+
 ### Pré-requisitos
 1. Uma conta Azure com permissões para criar Static Web Apps
-2. Um repositório GitHub com este código
+2. Um repositório com este código (GitHub ou Azure Repos)
 
-### Passos para Deploy
+### Opção 1: Deploy com GitHub Actions
 
 1. **Criar dois Static Web Apps no Azure Portal**:
    - Um para o Catalog (ex: `catalog-app-xyz`)
@@ -82,29 +99,92 @@ Os arquivos de distribuição serão gerados nas pastas `catalog/dist` e `shell/
    - Vá para a aba Actions no GitHub
    - Encontre o workflow do Shell e execute-o manualmente ou faça um commit no código do Shell
 
-Após o deploy, seu Shell App carregará dinamicamente o componente Products do Catalog App.
+### Opção 2: Deploy com Azure DevOps
 
-## Notas Importantes
+1. **Criar dois Static Web Apps no Azure Portal** como no método anterior
 
-### CORS
-Se o MFE remoto (catalog) fizer chamadas para APIs externas, certifique-se de que essas APIs permitam CORS do domínio do seu Static Web App.
+2. **Configurar Pipeline no Azure DevOps**:
+   - Crie um novo pipeline apontando para o repositório
+   - Use o arquivo `azure-pipelines.yml` na raiz do projeto
+   - Crie um grupo de variáveis chamado `static-web-apps-tokens` com:
+     - `CATALOG_DEPLOYMENT_TOKEN`: Token de implantação do primeiro Azure Static Web App
+     - `SHELL_DEPLOYMENT_TOKEN`: Token de implantação do segundo Azure Static Web App
+     - `CATALOG_URL`: URL do remoteEntry.js após o primeiro deploy
 
-### Cache e Versionamento
-Para gerenciar atualizações do remoteEntry.js sem quebrar o Shell:
+3. **Obter tokens de implantação**:
+   - No Azure Portal, vá para cada Static Web App
+   - Navegue até "Overview" > "Manage deployment token"
+   - Copie o token e adicione à variável correspondente no Azure DevOps
 
-1. Considere adicionar um hash de versão no nome do arquivo remoteEntry.js
-2. Configure cabeçalhos de cache adequados no staticwebapp.config.json
-3. Em atualizações críticas, atualize o secret VITE_CATALOG_URL no GitHub e redeploy o Shell
+4. **Executar o pipeline**:
+   - Após o primeiro deploy bem-sucedido do Catalog, obtenha a URL do remoteEntry.js
+   - Atualize a variável `CATALOG_URL` no grupo de variáveis
+   - Execute novamente o pipeline para implantar o Shell com a URL correta
 
-### Substituição da API de Produtos
-Para trocar a API de produtos atual por um backend próprio:
+### Verificando o Deployment
 
-1. Modifique `Products.tsx` no Catalog para apontar para sua nova API
-2. Se sua API tiver Swagger, considere gerar um cliente TypeScript em vez de usar Axios diretamente
-3. Lembre-se de configurar CORS na sua API para permitir requisições dos domínios dos Static Web Apps
+Após o deploy:
+
+1. Acesse a URL do app Shell
+2. Verifique se o componente Products está sendo carregado corretamente do Catalog
+3. Se houver problemas, verifique:
+   - Console do navegador para erros
+   - Logs de build no GitHub Actions ou Azure DevOps
+   - Configuração CORS no Catalog Static Web App (se necessário)
+
+## Customização e Extensão
+
+### Alterando a API de Produtos
+
+Para usar uma API diferente:
+
+1. Modifique `Products.tsx` no Catalog para apontar para sua nova API:
+
+```tsx
+const response = await axios.get('https://sua-nova-api.com/products');
+```
+
+2. Se sua API tiver especificação OpenAPI/Swagger, considere gerar um cliente TypeScript
+
+### Adicionando Novos Micro-Frontends
+
+Para adicionar um novo MFE:
+
+1. Crie uma nova pasta na raiz do projeto
+2. Configure o vite.config.ts com Module Federation
+3. Exponha os componentes necessários
+4. Adicione a nova aplicação ao workflow de CI/CD
+
+## Solução de Problemas
+
+### CORS em Produção
+
+Se encontrar erros de CORS:
+
+1. Verifique se o Static Web App do Catalog permite solicitações do domínio do Shell
+2. Adicione ao `staticwebapp.config.json` do Catalog:
+
+```json
+{
+  "headers": {
+    "/assets/remoteEntry.js": {
+      "Access-Control-Allow-Origin": "*"
+    }
+  }
+}
+```
+
+### Problemas com Module Federation
+
+Se o Shell não conseguir carregar componentes do Catalog:
+
+1. Verifique se a URL do remoteEntry.js está correta no Secret/Variável
+2. Confirme que o build do Catalog foi bem-sucedido
+3. Teste acessar diretamente a URL do remoteEntry.js no navegador
 
 ## Recursos Adicionais
 
 - [Documentação do Module Federation](https://webpack.js.org/concepts/module-federation/)
 - [Documentação do Azure Static Web Apps](https://docs.microsoft.com/azure/static-web-apps/)
 - [Plugin Module Federation para Vite](https://github.com/originjs/vite-plugin-federation)
+- [Práticas recomendadas para Azure Static Web Apps](https://learn.microsoft.com/azure/static-web-apps/front-end-frameworks)
